@@ -198,6 +198,7 @@ class AffineQuantizedTensor(torch.Tensor):
         # TODO: this is only for "tensor_core_tiled", need to figure out
         # the proper API for this arg
         inner_k_tiles: Optional[int] = None,
+        pack: Optional[int] = None,
     ):
         original_shape = input_float.shape
         if extended_layout == "tensor_core_tiled":
@@ -209,8 +210,31 @@ class AffineQuantizedTensor(torch.Tensor):
                 (0, in_features - orig_in_features, 0, out_features - orig_out_features),
             )
 
-        scale, zero_point = choose_qparams_affine(input_float, mapping_type, block_size, target_dtype, quant_min, quant_max, eps, scale_dtype, zero_point_dtype, preserve_zero, zero_point_domain)
-        int_data = quantize_affine(input_float, block_size, scale, zero_point, target_dtype, quant_min, quant_max, zero_point_domain)
+        scale, zero_point = choose_qparams_affine(
+            input_float,
+            mapping_type, 
+            block_size, 
+            target_dtype,
+            quant_min, 
+            quant_max, 
+            eps,
+            scale_dtype,
+            zero_point_dtype,
+            preserve_zero,
+            zero_point_domain,
+        )
+        
+        int_data = quantize_affine(
+            input_float, 
+            block_size, 
+            scale,
+            zero_point,
+            target_dtype, 
+            quant_min, 
+            quant_max, 
+            zero_point_domain
+            pack = pack
+        )
 
         layout_cls_ctr = get_layout_tensor_constructor(extended_layout)
         # TODO: this is temporary, need to come up with the proper UX

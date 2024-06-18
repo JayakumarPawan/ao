@@ -11,7 +11,7 @@ import torch
 from torchao.kernel.intmm import int_scaled_matmul
 from torchao.kernel.intmm import safe_int_mm
 from torchao.utils import TORCH_VERSION_AFTER_2_3
-
+from torchao.prototype.common.bitpacking import pack, unpack
 
 __all__ = [
     "safe_int_mm",
@@ -92,6 +92,23 @@ def _get_and_check_qmin_qmax(dtype, quant_min, quant_max):
         f"quant_max_upper_bound: {quant_max_upper_bound} quant_max: {quant_max}"
     return quant_min, quant_max
 
+def _get_group_dim(block_size, input_size):
+    """Given block_size and input size find the dimension that's not block_size
+
+    Example::
+        Input:
+          block_size: (3, 3, 2, 10)
+          input_size: (3, 3, 10, 10)
+
+        Output:
+          group_dim: 2
+    """
+    assert len(block_size) == len(input_size)
+    for i in range(len(block_size)):
+        if block_size[i] != input_size[i]:
+            return i
+    raise ValueError("Expecting block_size to be different from input size in at least one dimension")
+
 def _get_reduction_params(block_size, input_size):
     """Given block_size and input size find the parameters for reduction:
 
@@ -140,6 +157,7 @@ def quantize_affine(
     quant_min: Optional[int] = None,
     quant_max: Optional[int] = None,
     zero_point_domain: ZeroPointDomain = ZeroPointDomain.INT,
+    pack: Optional[int] = None,
 ):
     """
     Args:
@@ -157,6 +175,10 @@ def quantize_affine(
         if zero_point is in floating point domain, zero point is subtracted from the floating point (unquantized)
         value during quantization
         default is ZeroPointDomain.INT
+      pack (Optional[int]): if specified, will pack the quantized tensor
+        The argument itself specifies the packed element size (ex 2 for uint2)
+        The packing dimension is based on the group dimension
+        
 
     Note:
       How can block_size represent different granularities?
@@ -202,7 +224,9 @@ def quantize_affine(
                 quant_min, quant_max)
         ).to(output_dtype)
     quant = quant.view(original_shape)
-
+    if pack is not None:
+        dim = _get_group_dim(block_size, input.size())
+        quant = pack(quant, pack, dim=dim) # pack along group dim for better memory access
     return quant
 
 def dequantize_affine(
@@ -214,6 +238,7 @@ def dequantize_affine(
     quant_min: Optional[int] = None,
     quant_max: Optional[int] = None,
     zero_point_domain: ZeroPointDomain = ZeroPointDomain.INT,
+    pack: Optional[int] = None,
     *,
     output_dtype: torch.dtype = torch.float32,
 ):
@@ -234,7 +259,10 @@ def dequantize_affine(
         if zero_point is in floating point domain, zero point is subtracted from the floating point (unquantized)
         value during quantization
         default is ZeroPointDomain.INT
-
+      pack (Optional[int]): if specified, will pack the quantized tensor
+        The argument itself specifies the packed element size (ex 2 for uint2)
+        The packing dimension is based on the group dimension
+        
     Output:
       dequantized Tensor, with requested dtype or fp32
     """
@@ -244,7 +272,10 @@ def dequantize_affine(
     assert input.dtype == input_dtype, f"Expected: {input_dtype}, got: {input.dtype}"
     assert output_dtype in [torch.float32, torch.float16, torch.bfloat16], f"Unsupported output dtype: {output_dtype}"
     quant_min, quant_max = _get_and_check_qmin_qmax(input_dtype, quant_min, quant_max)
-
+    if pack is not None:
+        dim = _get_group_dim(block_size, input.size())
+        input = unpack(quant, pack, dim=dim) # pack along group dim for better memory access
+        
     shape_for_reduction, reduction_dims = _get_reduction_params(block_size, input.size())
     original_shape = input.shape
     input = input.view(shape_for_reduction)

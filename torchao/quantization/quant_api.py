@@ -349,7 +349,7 @@ def int8da_int4w(groupsize=32):
     return apply_8da4w_quant
 
 
-def int4wo(groupsize=128, inner_k_tiles=8):
+def int4wo(groupsize=128, inner_k_tiles=8, pack=None):
     """
     Applies uint4 weight-only asymmetric per-group quantization to linear layers, using
     "tensor_core_tiled" layout for speedup with tinygemm kernel
@@ -372,7 +372,21 @@ def int4wo(groupsize=128, inner_k_tiles=8):
         preserve_zero = False
         zero_point_dtype = torch.bfloat16
         zero_point_domain = ZeroPointDomain.FLOAT
-        return to_affine_quantized(weight, mapping_type, block_size, target_dtype, quant_min, quant_max, eps, zero_point_dtype=zero_point_dtype, preserve_zero=preserve_zero, zero_point_domain=zero_point_domain, extended_layout="tensor_core_tiled", inner_k_tiles=inner_k_tiles)
+        return to_affine_quantized(
+            weight, 
+            mapping_type,
+            block_size,
+            target_dtype,
+            quant_min,
+            quant_max,
+            eps,
+            zero_point_dtype=zero_point_dtype,
+            preserve_zero=preserve_zero,
+            zero_point_domain=zero_point_domain,
+            extended_layout="tensor_core_tiled",
+            inner_k_tiles=inner_k_tiles
+            pack=pack
+        )
 
     return apply_int4wo_quant
 
